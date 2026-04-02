@@ -1,0 +1,36 @@
+# @package _global_
+# nuScenes data config for Wan2.2-TI2V-5B (320x160) with DreamZero.
+# Uses the custom NuScenesDataset class and inherits video/state/action
+# transform definitions from the base config.
+
+defaults:
+  - dreamzero/base_48_wan_fine_aug_relative
+  - _self_
+
+# Wan2.2 5B resolution: 160x320 -> latent 10x20 -> patch 5x10 = 50
+image_resolution_width: 320
+image_resolution_height: 160
+
+# nuScenes temporal parameters (2 Hz keyframes)
+# 5 video frames = 2.0s window, 4 future trajectory waypoints
+num_frames: 5
+action_horizon: 4
+state_horizon: 1
+
+# Dimension limits (must match DreamTransform padding)
+max_state_dim: 44
+max_action_dim: 32
+
+# nuScenes data paths (must be set via CLI or env)
+nuscenes_data_root: ???
+nuscenes_preprocessed_path: ???
+
+# Dataset definition – uses the custom NuScenesDataset class directly
+train_dataset:
+  _target_: groot.vla.data.dataset.nuscenes.NuScenesDataset
+  _convert_: object
+  preprocessed_path: ${nuscenes_preprocessed_path}
+  data_root: ${nuscenes_data_root}
+  transforms: ${transform_nuscenes_ego}
+  embodiment_tag: nuscenes_ego
+  training: true

@@ -343,6 +343,76 @@ transform_yam:
 
 
 ################################################################################
+# nuscenes_ego (nuScenes autonomous driving: 3 cameras, state 7, action 3)
+################################################################################
+
+modality_config_nuscenes_ego:
+  video:
+    _target_: groot.vla.data.dataset.ModalityConfig
+    delta_indices: [0, 1, 2, 3, 4]
+    eval_delta_indices: [0]
+    modality_keys:
+      - video.cam_front
+      - video.cam_front_left
+      - video.cam_front_right
+  state:
+    _target_: groot.vla.data.dataset.ModalityConfig
+    delta_indices: [0]
+    modality_keys:
+      - state.ego_state
+  action:
+    _target_: groot.vla.data.dataset.ModalityConfig
+    delta_indices: [0, 1, 2, 3]
+    modality_keys:
+      - action.trajectory
+  language:
+    _target_: groot.vla.data.dataset.ModalityConfig
+    delta_indices: [0]
+    modality_keys:
+      - annotation.language.driving_command
+
+transform_nuscenes_ego:
+  _target_: groot.vla.data.transform.ComposedModalityTransform
+  transforms:
+    # Video transforms
+    - <<: *totensor_cfg
+      apply_to: ${modality_config_nuscenes_ego.video.modality_keys}
+    - <<: *crop_cfg
+      apply_to: ${modality_config_nuscenes_ego.video.modality_keys}
+    - <<: *resize_cfg
+      apply_to: ${modality_config_nuscenes_ego.video.modality_keys}
+    - <<: *color_jitter_cfg
+      apply_to: ${modality_config_nuscenes_ego.video.modality_keys}
+    - <<: *to_numpy_cfg
+      apply_to: ${modality_config_nuscenes_ego.video.modality_keys}
+
+    # State transforms
+    - _target_: groot.vla.data.transform.StateActionToTensor
+      apply_to: ${modality_config_nuscenes_ego.state.modality_keys}
+    - _target_: groot.vla.data.transform.StateActionTransform
+      apply_to: ${modality_config_nuscenes_ego.state.modality_keys}
+      normalization_modes:
+        state.ego_state: q99
+
+    # Action transforms
+    - _target_: groot.vla.data.transform.StateActionToTensor
+      apply_to: ${modality_config_nuscenes_ego.action.modality_keys}
+    - _target_: groot.vla.data.transform.StateActionTransform
+      apply_to: ${modality_config_nuscenes_ego.action.modality_keys}
+      normalization_modes:
+        action.trajectory: q99
+
+    # ConcatTransform
+    - _target_: groot.vla.data.transform.ConcatTransform
+      video_concat_order: ${modality_config_nuscenes_ego.video.modality_keys}
+      state_concat_order: ${modality_config_nuscenes_ego.state.modality_keys}
+      action_concat_order: ${modality_config_nuscenes_ego.action.modality_keys}
+
+    # Model-specific transform
+    - ${model_specific_transform}
+
+
+################################################################################
 # Modality Configs
 ################################################################################
 
@@ -350,6 +420,7 @@ modality_configs:
   oxe_droid: ${modality_config_oxe_droid}
   agibot: ${modality_config_agibot}
   yam: ${modality_config_yam}
+  nuscenes_ego: ${modality_config_nuscenes_ego}
 
 ################################################################################
 # Transforms
@@ -359,6 +430,7 @@ transforms:
   oxe_droid: ${transform_oxe_droid}
   agibot: ${transform_agibot}
   yam: ${transform_yam}
+  nuscenes_ego: ${transform_nuscenes_ego}
 
 ################################################################################
 # Metadata Versions
@@ -368,6 +440,7 @@ metadata_versions:
   oxe_droid: '0221'
   agibot: '0221'
   yam: '0221'
+  nuscenes_ego: '0001'
 
 ################################################################################
 # FPS (per embodiment, null means use dataset default)
@@ -375,3 +448,4 @@ metadata_versions:
 
 fps:
   yam: 30
+  nuscenes_ego: 2

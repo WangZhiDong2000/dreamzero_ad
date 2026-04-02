@@ -124,6 +124,8 @@ def collate(features: List[dict], tokenizer: AutoTokenizer, num_views=3, embodim
                         processed_item = "A multi-view video shows that a robot " + processed_item.lower() + " The video is split into four views: The top-left view shows the camera view from the robot's head, the top-right view shows the camera view from the right hand, the bottom-left view shows the camera view from the left hand, and the bottom-right view is a black screen (inactive view). The robot " + processed_item.lower()
                     elif elem["embodiment_id"] == embodiment_tag_mapping[EmbodimentTag.YAM.value]:
                         processed_item = "A multi-view video shows that a robot " + processed_item.lower() + " The video is split into four views: The top-left view shows the top camera, the top-right view shows the right camera, the bottom-left view shows the left camera, and the bottom-right view is a black screen. The robot " + processed_item.lower()
+                    elif elem["embodiment_id"] == embodiment_tag_mapping[EmbodimentTag.NUSCENES_EGO.value]:
+                        processed_item = "A multi-view driving video shows an autonomous vehicle navigating. " + processed_item.lower() + " The video is split into four views: The top-left view shows the front-left camera, the top-right view shows the front-right camera, the bottom-left view shows the front camera, and the bottom-right view is a black screen (inactive view). " + processed_item.lower()
                     else:
                         raise ValueError(f"Embodiment ID {elem['embodiment_id']} not supported.") 
                     output_values.append(processed_item)  
@@ -146,6 +148,8 @@ def collate(features: List[dict], tokenizer: AutoTokenizer, num_views=3, embodim
                         item = "A multi-view video shows that a robot " + str(item).lower() + " The video is split into four views: The top-left view shows the camera view from the robot's head, the top-right view shows the camera view from the right hand, the bottom-left view shows the camera view from the left hand, and the bottom-right view is a black screen (inactive view). The robot " + str(item).lower()
                     elif elem["embodiment_id"] == embodiment_tag_mapping[EmbodimentTag.YAM.value]:
                         item = "A multi-view video shows that a robot " + str(item).lower() + " The video is split into four views: The top-left view shows the top camera, the top-right view shows the right camera, the bottom-left view shows the left camera, and the bottom-right view is a black screen. The robot " + str(item).lower()
+                    elif elem["embodiment_id"] == embodiment_tag_mapping[EmbodimentTag.NUSCENES_EGO.value]:
+                        item = "A multi-view driving video shows an autonomous vehicle navigating. " + str(item).lower() + " The video is split into four views: The top-left view shows the front-left camera, the top-right view shows the front-right camera, the bottom-left view shows the front camera, and the bottom-right view is a black screen (inactive view). " + str(item).lower()
                     else:
                         raise ValueError(f"Embodiment ID {elem['embodiment_id']} not supported.")   
                     output_values.append(item)
@@ -354,6 +358,17 @@ class DreamTransform(InvertibleModalityTransform):
 
                 return concat_images
             
+            # For nuScenes ego vehicle: 2x2 grid with front-left, front-right, front
+            # Layout: [front_left (view 1), front_right (view 2)]
+            #         [front (view 0),      black               ]
+            if self.embodiment_tag == EmbodimentTag.NUSCENES_EGO and v >= 3:
+                concat_images = np.zeros((1, t, c, 2*h, 2*w), dtype=images.dtype)
+                concat_images[0, :, :, :h, :w] = images[1]   # top-left: front-left
+                concat_images[0, :, :, :h, w:] = images[2]   # top-right: front-right
+                concat_images[0, :, :, h:, :w] = images[0]   # bottom-left: front
+                # bottom-right: black (zeros)
+                return concat_images
+
             # For other embodiments: use 2x2 grid layout
             # Layout: [head, right]
             #         [left, black]

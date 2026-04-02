@@ -1,0 +1,13 @@
+# @package _global_
+# Wan2.2-TI2V-5B config for DreamZero nuScenes training
+# Inherits from wan_flow_matching_action_tf_wan22 and overrides
+# action_loss_embodiment_ids to include nuscenes_ego (index 33).
+
+defaults:
+  - wan_flow_matching_action_tf_wan22
+  - _self_
+
+# Include nuScenes ego embodiment in the action loss
+action_head_cfg:
+  config:
+    action_loss_embodiment_ids: [33]

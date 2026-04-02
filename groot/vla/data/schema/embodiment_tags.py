@@ -346,3 +346,8 @@ class EmbodimentTag(Enum):
     """
     The Mecka robot with hands.
     """
+
+    NUSCENES_EGO = "nuscenes_ego"
+    """
+    The nuScenes ego vehicle (autonomous driving).
+    """
