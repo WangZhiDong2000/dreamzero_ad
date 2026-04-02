@@ -1,0 +1,94 @@
+# @package _global_
+# PDM-Lite data config for Wan 2.2 5B backbone: 160x320 → latent 10x20 → frame_seqlen=50.
+# Single-view, single-GPU, LoRA fine-tuning on CARLA driving data.
+
+defaults:
+  - _self_
+
+# Resolution: 160x320 (HxW) matches Wan22 5B latent grid (10x20, patch 5x10=50)
+image_resolution_width: 320
+image_resolution_height: 160
+
+# State: 76 dims (4-step history flattened + 10-pt route)
+# Padded to max_state_dim by DreamTransform
+max_state_dim: 80
+max_action_dim: 32
+
+# Action/State/Video horizons
+num_frames: 9
+action_horizon: 6
+state_horizon: 1
+
+use_global_metadata: false
+relative_action: false
+
+# Chunk config for causal transformer
+max_chunk_size: 5
+num_frame_per_block: 1
+num_action_per_block: 6
+num_state_per_block: 1
+
+# Dataset paths (override from CLI or env)
+pdm_lite_data_root: ???
+pdm_lite_pkl_dir: ???
+pdm_lite_val_pkl_dir: ???
+
+################################################################################
+# Evaluation settings
+################################################################################
+eval_steps: 500
+num_eval_samples: 20
+num_denoise_steps: 10
+
+################################################################################
+# PDM-Lite Transform (only DreamTransform, no VideoResize/ConcatTransform
+# since PDMLiteDataset handles those internally)
+################################################################################
+
+transform_pdm_lite:
+  _target_: groot.vla.data.transform.ComposedModalityTransform
+  transforms:
+    - ${model_specific_transform}
+
+################################################################################
+# Train Dataset
+################################################################################
+
+train_dataset:
+  _target_: groot.vla.data.dataset.pdm_lite_dataset.PDMLiteDataset
+  _convert_: object
+  pkl_dir: ${pdm_lite_pkl_dir}
+  data_root: ${pdm_lite_data_root}
+  image_height: ${image_resolution_height}
+  image_width: ${image_resolution_width}
+  obs_horizon: 4
+  action_horizon: ${action_horizon}
+  num_frames: ${num_frames}
+  route_points: 10
+  transforms: ${transform_pdm_lite}
+  stat_sample_size: 500
+
+################################################################################
+# Validation Dataset
+################################################################################
+
+val_dataset:
+  _target_: groot.vla.data.dataset.pdm_lite_dataset.PDMLiteDataset
+  _convert_: object
+  pkl_dir: ${pdm_lite_val_pkl_dir}
+  data_root: ${pdm_lite_data_root}
+  image_height: ${image_resolution_height}
+  image_width: ${image_resolution_width}
+  obs_horizon: 4
+  action_horizon: ${action_horizon}
+  num_frames: ${num_frames}
+  route_points: 10
+  transforms: ${transform_pdm_lite}
+  stat_sample_size: 500
+
+################################################################################
+# Evaluation Transforms (required by BaseExperiment.__init__)
+################################################################################
+
+transforms:
+  pdm_lite: ${transform_pdm_lite}

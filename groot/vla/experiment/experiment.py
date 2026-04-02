@@ -32,7 +32,7 @@ class VLATrainer(BaseTrainer):
         self.restart_max_seconds = kwargs.pop("restart_max_seconds", 0)
         import torch.distributed as dist
 
-        self.rank = dist.get_rank()
+        self.rank = dist.get_rank() if dist.is_initialized() else 0
 
         self.micro_global_step = 0
 

@@ -346,3 +346,8 @@ class EmbodimentTag(Enum):
     """
     The Mecka robot with hands.
     """
+
+    PDM_LITE = "pdm_lite"
+    """
+    The PDM-Lite CARLA autonomous driving dataset.
+    """

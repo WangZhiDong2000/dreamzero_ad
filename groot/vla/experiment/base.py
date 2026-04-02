@@ -740,11 +740,19 @@ class BaseExperiment(ABC):
         return model
 
     def create_train_dataset(self, cfg, model):
-        assert torch.distributed.is_initialized()
+        if not torch.distributed.is_initialized():
+            torch.distributed.init_process_group(
+                backend="nccl",
+                init_method="tcp://127.0.0.1:29500",
+                world_size=1,
+                rank=0,
+            )
         train_dataset = instantiate(cfg.train_dataset)
         return train_dataset
 
     def create_val_dataset(self, cfg, model):
+        if OmegaConf.select(cfg, "val_dataset") is not None:
+            return instantiate(cfg.val_dataset)
         return None
 
     def create_data_collator(self, cfg, model):
@@ -810,6 +818,17 @@ class BaseExperiment(ABC):
 
         loss_log_path = str(Path(training_args.output_dir) / "loss_log.jsonl")
         trainer.add_callback(LossLoggerCallback(output_path=loss_log_path))
+
+        # Planning metrics callback (PDM-Lite evaluation)
+        if val_dataset is not None and OmegaConf.select(cfg, "eval_steps") is not None:
+            from groot.vla.experiment.planning_metrics_callback import PlanningMetricsCallback
+            trainer.add_callback(PlanningMetricsCallback(
+                val_dataset=val_dataset,
+                collate_fn=data_collator,
+                eval_steps=int(cfg.eval_steps),
+                num_eval_samples=int(OmegaConf.select(cfg, "num_eval_samples", default=20)),
+                num_denoise_steps=int(OmegaConf.select(cfg, "num_denoise_steps", default=10)),
+            ))
 
 
         # Add profiling callback (local profiling only, no S3 upload)
