@@ -12,6 +12,12 @@
 set -euo pipefail
 export HYDRA_FULL_ERROR=1
 
+# ============ Activate conda env ============
+if [ -f "/workspace1/miniconda/etc/profile.d/conda.sh" ]; then
+    source /workspace1/miniconda/etc/profile.d/conda.sh
+    conda activate dreamzero
+fi
+
 # ============ Repo root ============
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -27,8 +33,8 @@ fi
 # ============ USER CONFIGURATION ============
 NUM_GPUS=1
 
-NUSCENES_DATA_ROOT="${NUSCENES_DATA_ROOT:-/home/wang/Dataset/nuscenes}"
-NUSCENES_PREPROCESSED="${NUSCENES_PREPROCESSED:-/home/wang/Dataset/nuscenes/preprocessed_dreamzero}"
+NUSCENES_DATA_ROOT="${NUSCENES_DATA_ROOT:-/home/zhidong/nuscenes_data}"
+NUSCENES_PREPROCESSED="${NUSCENES_PREPROCESSED:-/home/zhidong/nuscenes_preprocessed}"
 OUTPUT_DIR="${OUTPUT_DIR:-$DREAMZERO_ROOT/checkpoints/dreamzero_nuscenes_wan22_lora}"
 
 WAN22_CKPT_DIR="${WAN22_CKPT_DIR:-$DREAMZERO_ROOT/checkpoints/Wan2.2-TI2V-5B}"
@@ -53,11 +59,14 @@ fi
 
 cd "$DREAMZERO_ROOT"
 
-python3 -m torch.distributed.run \
-    --nproc_per_node "$NUM_GPUS" \
-    --standalone \
-    "$EXPERIMENT_PY" \
-    report_to=wandb \
+export WORLD_SIZE=1
+export RANK=0
+export LOCAL_RANK=0
+export MASTER_ADDR=127.0.0.1
+export MASTER_PORT="${MASTER_PORT:-29500}"
+
+python3 "$EXPERIMENT_PY" \
+    report_to=none \
     data=dreamzero/nuscenes_relative_wan22 \
     wandb_project=dreamzero-nuscenes \
     train_architecture=lora \
@@ -67,17 +76,17 @@ python3 -m torch.distributed.run \
     model=dreamzero/vla \
     model/dreamzero/action_head=wan_flow_matching_action_tf_wan22_nuscenes \
     model/dreamzero/transform=dreamzero_cotrain \
-    num_frame_per_block=2 \
+    num_frame_per_block=1 \
     num_action_per_block=4 \
     num_state_per_block=1 \
     seed=42 \
     training_args.learning_rate=1e-5 \
-    training_args.deepspeed="groot/vla/configs/deepspeed/zero3_offload.json" \
+    training_args.deepspeed="groot/vla/configs/deepspeed/zero2.json" \
     save_steps=500 \
     training_args.warmup_ratio=0.05 \
     output_dir="$OUTPUT_DIR" \
     per_device_train_batch_size=1 \
-    max_steps=5 \
+    max_steps=100 \
     weight_decay=1e-5 \
     save_total_limit=5 \
     upload_checkpoints=false \

@@ -11,3 +11,8 @@ defaults:
 action_head_cfg:
   config:
     action_loss_embodiment_ids: [33]
+    max_state_dim: ${max_state_dim}
+    max_action_dim: ${max_action_dim}
+    diffusion_model_cfg:
+      max_state_dim: ${max_state_dim}
+      action_dim: ${max_action_dim}
