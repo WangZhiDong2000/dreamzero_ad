@@ -12,9 +12,9 @@ image_resolution_width: 320
 image_resolution_height: 160
 
 # nuScenes temporal parameters (2 Hz keyframes)
-# 5 video frames = 2.0s window, 4 future trajectory waypoints
+# 5 video frames = 2.0s window, 6 future trajectory waypoints (3s)
 num_frames: 5
-action_horizon: 4
+action_horizon: 6
 state_horizon: 1
 
 # Dimension limits (must match DreamTransform padding)

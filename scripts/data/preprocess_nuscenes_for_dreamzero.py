@@ -27,7 +27,7 @@ from tqdm import tqdm
 # ---------------------------------------------------------------------------
 CAMERAS = ["CAM_FRONT", "CAM_FRONT_LEFT", "CAM_FRONT_RIGHT"]
 NUM_VIDEO_FRAMES = 5   # history + current + future frames at 2 Hz
-ACTION_HORIZON = 4     # number of future waypoints
+ACTION_HORIZON = 6     # number of future waypoints (3 seconds at 2 Hz)
 ACTION_DIM = 3         # (dx, dy, dyaw) in ego frame
 STATE_DIM = 7          # vx, vy, ax, ay, yaw_rate, speed, heading
 
@@ -135,8 +135,9 @@ def preprocess_nuscenes(data_root: str, output_dir: str, version: str = "v1.0-mi
             s = nusc.get("sample", cur)
             cur = s["next"] if s["next"] else None
 
-        if len(sample_tokens) < NUM_VIDEO_FRAMES:
-            print(f"  Scene {scene['name']}: {len(sample_tokens)} samples < {NUM_VIDEO_FRAMES}, skipping.")
+        min_required = max(NUM_VIDEO_FRAMES, ACTION_HORIZON + 1)
+        if len(sample_tokens) < min_required:
+            print(f"  Scene {scene['name']}: {len(sample_tokens)} samples < {min_required}, skipping.")
             continue
 
         # Pre-compute ego poses for every keyframe
@@ -146,8 +147,9 @@ def preprocess_nuscenes(data_root: str, output_dir: str, version: str = "v1.0-mi
             positions.append(p)
             rotations.append(r)
 
-        # Slide a window of length NUM_VIDEO_FRAMES across the scene
-        for i in range(len(sample_tokens) - NUM_VIDEO_FRAMES + 1):
+        # Slide a window across the scene; need enough frames for both
+        # video (NUM_VIDEO_FRAMES) and trajectory (ACTION_HORIZON future poses)
+        for i in range(len(sample_tokens) - min_required + 1):
             frame_tokens = sample_tokens[i : i + NUM_VIDEO_FRAMES]
 
             # --- camera image paths (relative to data_root) ---

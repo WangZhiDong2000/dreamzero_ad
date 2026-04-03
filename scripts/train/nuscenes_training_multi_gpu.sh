@@ -1,13 +1,14 @@
 #!/bin/bash
-# DreamZero nuScenes Training Script (single-GPU, LoRA, Wan2.2-TI2V-5B)
+# DreamZero nuScenes Training Script (multi-GPU, LoRA, Wan2.2-TI2V-5B)
+#
+# Predicts 6 future waypoints (3 seconds at 2 Hz).
 #
 # Usage:
-#   bash scripts/train/nuscenes_training_single_gpu.sh
+#   CUDA_VISIBLE_DEVICES=6,7 bash scripts/train/nuscenes_training_multi_gpu.sh
 #
 # Prerequisites:
 #   - Preprocessed nuScenes data (run scripts/data/preprocess_nuscenes_for_dreamzero.py first)
 #   - Wan2.2-TI2V-5B weights + CLIP encoder + umt5-xxl tokenizer
-#     (see scripts/train/droid_training_wan22.sh header for download commands)
 
 set -euo pipefail
 export HYDRA_FULL_ERROR=1
@@ -31,7 +32,7 @@ else
 fi
 
 # ============ USER CONFIGURATION ============
-NUM_GPUS=1
+NUM_GPUS="${NUM_GPUS:-2}"
 
 NUSCENES_DATA_ROOT="${NUSCENES_DATA_ROOT:-/home/zhidong/nuscenes_data}"
 NUSCENES_PREPROCESSED="${NUSCENES_PREPROCESSED:-/home/zhidong/nuscenes_preprocessed}"
@@ -40,16 +41,18 @@ OUTPUT_DIR="${OUTPUT_DIR:-$DREAMZERO_ROOT/checkpoints/dreamzero_nuscenes_wan22_l
 WAN22_CKPT_DIR="${WAN22_CKPT_DIR:-$DREAMZERO_ROOT/checkpoints/Wan2.2-TI2V-5B}"
 IMAGE_ENCODER_DIR="${IMAGE_ENCODER_DIR:-$DREAMZERO_ROOT/checkpoints/Wan2.1-I2V-14B-480P}"
 TOKENIZER_DIR="${TOKENIZER_DIR:-$DREAMZERO_ROOT/checkpoints/Wan2.2-TI2V-5B/google/umt5-xxl}"
+
+# WandB configuration
+export WANDB_API_KEY="${WANDB_API_KEY:-a0d403cb4dc1be3c5c7df4677a1b42d1c3e71b4f}"
+export WANDB_ENTITY="${WANDB_ENTITY:-wangzhidong2000-nanyang-technological-university-singapore}"
 # =============================================
 
 # ============ Validate paths ============
-for d in "$NUSCENES_PREPROCESSED/samples.pkl"; do
-    if [ ! -f "$d" ]; then
-        echo "ERROR: Preprocessed data not found at $d"
-        echo "Run:  python scripts/data/preprocess_nuscenes_for_dreamzero.py first."
-        exit 1
-    fi
-done
+if [ ! -f "$NUSCENES_PREPROCESSED/samples.pkl" ]; then
+    echo "ERROR: Preprocessed data not found at $NUSCENES_PREPROCESSED/samples.pkl"
+    echo "Run:  python scripts/data/preprocess_nuscenes_for_dreamzero.py first."
+    exit 1
+fi
 
 EXPERIMENT_PY="$DREAMZERO_ROOT/groot/vla/experiment/experiment.py"
 if [ ! -f "$EXPERIMENT_PY" ]; then
@@ -59,17 +62,15 @@ fi
 
 cd "$DREAMZERO_ROOT"
 
-export WORLD_SIZE=1
-export RANK=0
-export LOCAL_RANK=0
-export MASTER_ADDR=127.0.0.1
-export MASTER_PORT="${MASTER_PORT:-29500}"
-
-python3 "$EXPERIMENT_PY" \
+# ============ Launch with torchrun ============
+torchrun \
+    --nproc_per_node "$NUM_GPUS" \
+    --master_addr 127.0.0.1 \
+    --master_port "${MASTER_PORT:-29500}" \
+    "$EXPERIMENT_PY" \
     report_to=wandb \
     data=dreamzero/nuscenes_relative_wan22 \
     wandb_project=dreamzero-nuscenes \
-    wandb_entity=wangzhidong2000-nanyang-technological-university-singapore \
     train_architecture=lora \
     num_frames=5 \
     action_horizon=6 \
@@ -83,23 +84,23 @@ python3 "$EXPERIMENT_PY" \
     seed=42 \
     training_args.learning_rate=1e-5 \
     training_args.deepspeed="groot/vla/configs/deepspeed/zero2.json" \
-    save_steps=500 \
     training_args.warmup_ratio=0.05 \
     output_dir="$OUTPUT_DIR" \
     per_device_train_batch_size=1 \
-    max_steps=100 \
+    max_steps=290500 \
     weight_decay=1e-5 \
+    save_steps=2000 \
     save_total_limit=5 \
+    save_strategy=steps \
     upload_checkpoints=false \
     bf16=true \
     tf32=true \
     eval_bf16=true \
     gradient_checkpointing=true \
     dataloader_pin_memory=false \
-    dataloader_num_workers=1 \
+    dataloader_num_workers=2 \
     save_lora_only=true \
     +max_chunk_size=1 \
-    save_strategy=no \
     nuscenes_data_root="$NUSCENES_DATA_ROOT" \
     nuscenes_preprocessed_path="$NUSCENES_PREPROCESSED" \
     dit_version="$WAN22_CKPT_DIR" \
