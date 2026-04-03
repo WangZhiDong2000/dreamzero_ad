@@ -62,11 +62,26 @@ fi
 
 cd "$DREAMZERO_ROOT"
 
+# ============ Clean up old processes ============
+echo "Cleaning up old training processes..."
+OLD_PIDS=$(pgrep -f "experiment.py.*action_horizon=6" 2>/dev/null || true)
+OLD_PIDS=$(echo "$OLD_PIDS" | grep -v "^$$" || true)
+if [ -n "$OLD_PIDS" ]; then
+    echo "Found old processes: $OLD_PIDS"
+    echo "$OLD_PIDS" | xargs kill -9 2>/dev/null || true
+    sleep 2
+    echo "Old processes cleaned up."
+fi
+echo "Ready to start new training."
+
+# ============ Set GPU devices ============
+export CUDA_VISIBLE_DEVICES=6,7
+
 # ============ Launch with torchrun ============
 torchrun \
     --nproc_per_node "$NUM_GPUS" \
     --master_addr 127.0.0.1 \
-    --master_port "${MASTER_PORT:-29500}" \
+    --master_port "${MASTER_PORT:-29501}" \
     "$EXPERIMENT_PY" \
     report_to=wandb \
     data=dreamzero/nuscenes_relative_wan22 \
