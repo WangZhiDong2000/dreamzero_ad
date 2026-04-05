@@ -413,44 +413,49 @@ class GrootSimPolicy(BaseGrootSimPolicy):
         assert isinstance(eval_transform, ComposedModalityTransform), f"{eval_transform=}"
         eval_transform.set_metadata(metadata)
         
-        # Set per-horizon statistics for PerHorizonActionTransform if using relative_action_per_horizon
-        relative_action_per_horizon = self.train_cfg.get('relative_action_per_horizon', False)
-        print(f"DEBUG: relative_action_per_horizon = {relative_action_per_horizon}")
-        if relative_action_per_horizon:
-            # Extract per-horizon statistics from metadata
-            # The metadata has format: {embodiment: {statistics: {action: {key: {stat: [[h0], [h1], ...]}}}}
-            action_stats = metadata.statistics.action
-            print(f"DEBUG: action_stats keys = {list(action_stats.keys())}")
-            per_horizon_stats = {}
-            for action_key in action_stats:
-                stats_dict = action_stats[action_key].model_dump()
-                print(f"DEBUG: action_key={action_key}, stats_dict keys={list(stats_dict.keys())}")
-                # Check if stats are per-horizon (2D lists) by examining q01/q99
-                if 'q01' in stats_dict:
-                    q01_val = stats_dict['q01']
-                    print(f"DEBUG: q01 type={type(q01_val)}, value sample={q01_val[:2] if hasattr(q01_val, '__getitem__') else q01_val}")
-                    # Handle both list and numpy array
-                    is_2d = False
-                    if isinstance(q01_val, (list, np.ndarray)) and len(q01_val) > 0:
-                        first_elem = q01_val[0]
-                        print(f"DEBUG: q01[0] type={type(first_elem)}")
-                        if isinstance(first_elem, (list, np.ndarray)):
-                            is_2d = True
-                    
-                    if is_2d:
-                        # This is per-horizon stats (2D array) - convert to list if numpy
-                        if isinstance(q01_val, np.ndarray):
-                            for k in stats_dict:
-                                if isinstance(stats_dict[k], np.ndarray):
-                                    stats_dict[k] = stats_dict[k].tolist()
-                        per_horizon_stats[action_key] = stats_dict
-                        print(f"DEBUG: Added {action_key} to per_horizon_stats")
-            
-            if per_horizon_stats:
-                print(f"Setting per-horizon statistics for keys: {list(per_horizon_stats.keys())}")
-                eval_transform.set_per_horizon_statistics(per_horizon_stats)
+        # Load per-horizon statistics for PerHorizonActionTransform
+        # First try loading from checkpoint's experiment_cfg directory
+        per_horizon_stats_path = exp_cfg_dir / "per_horizon_stats.json"
+        has_per_horizon_transform = any(
+            hasattr(t, "set_per_horizon_statistics") 
+            for t in eval_transform.transforms
+        )
+        
+        if per_horizon_stats_path.exists() and has_per_horizon_transform:
+            with open(per_horizon_stats_path, "r") as f:
+                per_horizon_stats = json.load(f)
+            print(f"Loaded per-horizon stats from {per_horizon_stats_path}")
+            eval_transform.set_per_horizon_statistics(per_horizon_stats)
+        elif has_per_horizon_transform:
+            # Fallback: check if relative_action_per_horizon is set and try metadata
+            relative_action_per_horizon = self.train_cfg.get('relative_action_per_horizon', False)
+            print(f"DEBUG: relative_action_per_horizon = {relative_action_per_horizon}")
+            if relative_action_per_horizon:
+                action_stats = metadata.statistics.action
+                per_horizon_stats = {}
+                for action_key in action_stats:
+                    stats_dict = action_stats[action_key].model_dump()
+                    if 'q01' in stats_dict:
+                        q01_val = stats_dict['q01']
+                        is_2d = False
+                        if isinstance(q01_val, (list, np.ndarray)) and len(q01_val) > 0:
+                            first_elem = q01_val[0]
+                            if isinstance(first_elem, (list, np.ndarray)):
+                                is_2d = True
+                        if is_2d:
+                            if isinstance(q01_val, np.ndarray):
+                                for k in stats_dict:
+                                    if isinstance(stats_dict[k], np.ndarray):
+                                        stats_dict[k] = stats_dict[k].tolist()
+                            per_horizon_stats[action_key] = stats_dict
+                
+                if per_horizon_stats:
+                    print(f"Setting per-horizon statistics for keys: {list(per_horizon_stats.keys())}")
+                    eval_transform.set_per_horizon_statistics(per_horizon_stats)
+                else:
+                    print(f"WARNING: No per-horizon statistics found despite relative_action_per_horizon=True")
             else:
-                print(f"WARNING: No per-horizon statistics found despite relative_action_per_horizon=True")
+                print(f"WARNING: PerHorizonActionTransform found but no per_horizon_stats.json in checkpoint")
         
         eval_transform.eval()
         self.eval_transform = eval_transform

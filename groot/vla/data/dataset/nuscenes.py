@@ -49,13 +49,46 @@ class NuScenesDataset(Dataset):
         self.training = training
         self.embodiment_tag = EmbodimentTag(embodiment_tag)
 
-        # Load preprocessed samples
-        with open(self.preprocessed_path / "samples.pkl", "rb") as f:
-            self.samples = pickle.load(f)
+        # Load preprocessed samples — prefer split-specific files
+        train_pkl = self.preprocessed_path / "train_samples.pkl"
+        val_pkl = self.preprocessed_path / "val_samples.pkl"
+        all_pkl = self.preprocessed_path / "samples.pkl"
+
+        if train_pkl.exists() and val_pkl.exists():
+            # Use split-specific files
+            pkl_path = train_pkl if training else val_pkl
+            with open(pkl_path, "rb") as f:
+                self.samples = pickle.load(f)
+            print(f"NuScenesDataset: loaded {len(self.samples)} {'train' if training else 'val'} "
+                  f"samples from {pkl_path.name}")
+        elif all_pkl.exists():
+            # Fallback: load all and filter using official splits
+            with open(all_pkl, "rb") as f:
+                all_samples = pickle.load(f)
+            from nuscenes.utils.splits import (
+                train as NUSCENES_TRAIN_SCENES,
+                val as NUSCENES_VAL_SCENES,
+            )
+            split_scenes = set(NUSCENES_TRAIN_SCENES) if training else set(NUSCENES_VAL_SCENES)
+            self.samples = [s for s in all_samples if s["scene_name"] in split_scenes]
+            print(f"NuScenesDataset: filtered {len(self.samples)} {'train' if training else 'val'} "
+                  f"samples from {len(all_samples)} total (fallback split)")
+        else:
+            raise FileNotFoundError(
+                f"No samples found. Expected {train_pkl} or {all_pkl}"
+            )
 
         # Load normalization stats
         with open(self.preprocessed_path / "meta" / "stats.json") as f:
             self.raw_stats = json.load(f)
+
+        # Load per-horizon stats if available
+        per_horizon_path = self.preprocessed_path / "meta" / "per_horizon_stats.json"
+        if per_horizon_path.exists():
+            with open(per_horizon_path) as f:
+                self.per_horizon_stats = json.load(f)
+        else:
+            self.per_horizon_stats = None
 
         # Build metadata (needed for transforms and training infra)
         self._metadata = self._build_metadata()
@@ -69,6 +102,9 @@ class NuScenesDataset(Dataset):
         self.transforms = transforms
         if self.transforms is not None:
             self.transforms.set_metadata(self._metadata)
+            # Set per-horizon stats for PerHorizonActionTransform
+            if self.per_horizon_stats is not None:
+                self.transforms.set_per_horizon_statistics(self.per_horizon_stats)
 
     def _build_metadata(self) -> DatasetMetadata:
         """Build a DatasetMetadata object from the preprocessed stats."""

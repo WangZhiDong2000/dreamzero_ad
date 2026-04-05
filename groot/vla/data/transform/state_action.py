@@ -431,11 +431,15 @@ class PerHorizonActionTransform(InvertibleModalityTransform):
             # Extract action subkey (e.g., 'action.joint_position' -> 'joint_position')
             subkey = key.replace("action.", "")
             
-            if subkey not in self.per_horizon_statistics:
-                print(f"Warning: No per-horizon statistics found for {subkey}, skipping")
+            # Try both full key and subkey for compatibility
+            if key in self.per_horizon_statistics:
+                statistics = self.per_horizon_statistics[key]
+            elif subkey in self.per_horizon_statistics:
+                statistics = self.per_horizon_statistics[subkey]
+            else:
+                print(f"Warning: No per-horizon statistics found for {key} or {subkey}, skipping")
                 continue
             
-            statistics = self.per_horizon_statistics[subkey]
             self._normalizers[key] = PerHorizonNormalizer(
                 mode=self.normalization_modes[key],
                 statistics=statistics

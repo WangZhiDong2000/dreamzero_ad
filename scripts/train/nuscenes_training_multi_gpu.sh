@@ -32,7 +32,7 @@ else
 fi
 
 # ============ USER CONFIGURATION ============
-NUM_GPUS="${NUM_GPUS:-2}"
+NUM_GPUS="${NUM_GPUS:-4}"
 
 NUSCENES_DATA_ROOT="${NUSCENES_DATA_ROOT:-/home/zhidong/nuscenes_data}"
 NUSCENES_PREPROCESSED="${NUSCENES_PREPROCESSED:-/home/zhidong/nuscenes_preprocessed}"
@@ -75,7 +75,7 @@ fi
 echo "Ready to start new training."
 
 # ============ Set GPU devices ============
-export CUDA_VISIBLE_DEVICES=6,7
+export CUDA_VISIBLE_DEVICES=4,5,6,7
 
 # ============ Launch with torchrun ============
 torchrun \

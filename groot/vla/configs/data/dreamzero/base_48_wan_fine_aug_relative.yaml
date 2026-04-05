@@ -397,7 +397,7 @@ transform_nuscenes_ego:
     # Action transforms
     - _target_: groot.vla.data.transform.StateActionToTensor
       apply_to: ${modality_config_nuscenes_ego.action.modality_keys}
-    - _target_: groot.vla.data.transform.StateActionTransform
+    - _target_: groot.vla.data.transform.PerHorizonActionTransform
       apply_to: ${modality_config_nuscenes_ego.action.modality_keys}
       normalization_modes:
         action.trajectory: q99

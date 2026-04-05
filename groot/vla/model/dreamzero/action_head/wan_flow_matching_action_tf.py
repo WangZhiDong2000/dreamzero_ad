@@ -620,8 +620,6 @@ class WANPolicyHead(ActionHead):
         videos = data["images"]
 
         videos = rearrange(videos, "b t h w c -> b c t h w")
-        print("videos", videos.shape)
-        
 
         if videos.dtype == torch.uint8:
             videos = videos.float() / 255.0
@@ -793,7 +791,10 @@ class WANPolicyHead(ActionHead):
                     action_noise_pred.float(), training_target_action.float(), reduction='none'
                 ) * action_mask  # shape: [B, ...]
                 action_loss_per_sample = has_real_action[:, None].float() * action_loss_per_sample  # apply has_real_action
-                weight_action = action_loss_per_sample.mean(dim=2) * self.scheduler.training_weight(
+                # Mean over real dims only (avoid scaling by 3/32 from zero-padding)
+                mask_count = action_mask.sum(dim=-1, keepdim=True).clamp(min=1)
+                action_loss_per_step = action_loss_per_sample.sum(dim=2) / mask_count.squeeze(-1)
+                weight_action = action_loss_per_step * self.scheduler.training_weight(
                     timestep_action.flatten(0, 1),
                 ).unflatten(0, (noise_action.shape[0], noise_action.shape[1])).to(self._device)
                 weighted_action_loss = weight_action.mean()

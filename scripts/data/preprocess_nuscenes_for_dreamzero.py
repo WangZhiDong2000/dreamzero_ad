@@ -2,15 +2,15 @@
 Preprocess nuScenes dataset for DreamZero VLA training.
 
 Extracts multi-view camera images, ego vehicle states, and future trajectory
-waypoints from nuScenes keyframes.  Saves a samples.pkl file with image paths
-(loaded on-the-fly by the dataset class) and pre-computed state/action arrays,
-plus a meta/stats.json with normalization statistics.
+waypoints from nuScenes keyframes.  Saves separate train/val samples.pkl
+files (using official nuScenes splits) and computes normalization statistics
+on the train split only.
 
 Usage:
     python scripts/data/preprocess_nuscenes_for_dreamzero.py \
         --data_root /home/wang/Dataset/nuscenes \
         --output_dir /home/wang/Dataset/nuscenes/preprocessed_dreamzero \
-        --version v1.0-mini
+        --version v1.0-trainval
 """
 
 import argparse
@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 from pyquaternion import Quaternion
 from tqdm import tqdm
+from nuscenes.utils.splits import train as NUSCENES_TRAIN_SCENES, val as NUSCENES_VAL_SCENES
 
 # ---------------------------------------------------------------------------
 # Constants – adjust these to change the temporal window / action space
@@ -189,24 +190,37 @@ def preprocess_nuscenes(data_root: str, output_dir: str, version: str = "v1.0-mi
     print(f"\nTotal valid samples: {len(all_samples)}")
 
     # ------------------------------------------------------------------
+    # Split into train / val using official nuScenes scene splits
+    # ------------------------------------------------------------------
+    train_scene_set = set(NUSCENES_TRAIN_SCENES)
+    val_scene_set = set(NUSCENES_VAL_SCENES)
+
+    train_samples = [s for s in all_samples if s["scene_name"] in train_scene_set]
+    val_samples = [s for s in all_samples if s["scene_name"] in val_scene_set]
+
+    print(f"Train samples: {len(train_samples)} (from {len(train_scene_set)} scenes)")
+    print(f"Val samples:   {len(val_samples)} (from {len(val_scene_set)} scenes)")
+
+    # ------------------------------------------------------------------
     # Back-fill acceleration using finite differences of velocity
     # ------------------------------------------------------------------
     dt = 0.5  # 2 Hz
-    for idx in range(1, len(all_samples)):
-        prev = all_samples[idx - 1]
-        curr = all_samples[idx]
-        # Only makes sense within the same scene
-        if prev["scene_token"] == curr["scene_token"]:
-            vx_prev, vy_prev = prev["state"][0, 0], prev["state"][0, 1]
-            vx_curr, vy_curr = curr["state"][0, 0], curr["state"][0, 1]
-            curr["state"][0, 2] = (vx_curr - vx_prev) / dt  # ax
-            curr["state"][0, 3] = (vy_curr - vy_prev) / dt  # ay
+    for sample_list in [train_samples, val_samples]:
+        for idx in range(1, len(sample_list)):
+            prev = sample_list[idx - 1]
+            curr = sample_list[idx]
+            # Only makes sense within the same scene
+            if prev["scene_token"] == curr["scene_token"]:
+                vx_prev, vy_prev = prev["state"][0, 0], prev["state"][0, 1]
+                vx_curr, vy_curr = curr["state"][0, 0], curr["state"][0, 1]
+                curr["state"][0, 2] = (vx_curr - vx_prev) / dt  # ax
+                curr["state"][0, 3] = (vy_curr - vy_prev) / dt  # ay
 
     # ------------------------------------------------------------------
-    # Compute normalization statistics
+    # Compute normalization statistics (ONLY on train split)
     # ------------------------------------------------------------------
-    all_states = np.concatenate([s["state"] for s in all_samples], axis=0)      # (N, STATE_DIM)
-    all_actions = np.concatenate([s["action"] for s in all_samples], axis=0)    # (N*H, ACTION_DIM)
+    all_states = np.concatenate([s["state"] for s in train_samples], axis=0)
+    all_actions = np.concatenate([s["action"] for s in train_samples], axis=0)
 
     def _stats(arr):
         return {
@@ -218,28 +232,69 @@ def preprocess_nuscenes(data_root: str, output_dir: str, version: str = "v1.0-mi
             "q99": np.percentile(arr, 99, axis=0).tolist(),
         }
 
+    def _per_horizon_stats(samples, horizon=ACTION_HORIZON):
+        """Compute per-horizon normalization statistics."""
+        actions = np.stack([s["action"] for s in samples])  # (N, H, D)
+        result = {}
+        for stat_name in ["mean", "std", "min", "max", "q01", "q99"]:
+            per_step = []
+            for h in range(horizon):
+                step_data = actions[:, h, :]  # (N, D)
+                if stat_name == "mean":
+                    per_step.append(step_data.mean(axis=0).tolist())
+                elif stat_name == "std":
+                    per_step.append(step_data.std(axis=0).tolist())
+                elif stat_name == "min":
+                    per_step.append(step_data.min(axis=0).tolist())
+                elif stat_name == "max":
+                    per_step.append(step_data.max(axis=0).tolist())
+                elif stat_name == "q01":
+                    per_step.append(np.percentile(step_data, 1, axis=0).tolist())
+                elif stat_name == "q99":
+                    per_step.append(np.percentile(step_data, 99, axis=0).tolist())
+            result[stat_name] = per_step  # list of H lists, each of length D
+        return result
+
     stats = {
         "state.ego_state": _stats(all_states),
         "action.trajectory": _stats(all_actions),
     }
 
+    per_horizon_stats = {
+        "action.trajectory": _per_horizon_stats(train_samples),
+    }
+
     # ------------------------------------------------------------------
     # Save
     # ------------------------------------------------------------------
+    # Save train and val samples separately
+    with open(output_path / "train_samples.pkl", "wb") as f:
+        pickle.dump(train_samples, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    with open(output_path / "val_samples.pkl", "wb") as f:
+        pickle.dump(val_samples, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # Also save combined samples.pkl for backward compatibility
     with open(output_path / "samples.pkl", "wb") as f:
         pickle.dump(all_samples, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     with open(output_path / "meta" / "stats.json", "w") as f:
         json.dump(stats, f, indent=2)
 
-    print(f"Saved {len(all_samples)} samples → {output_path / 'samples.pkl'}")
-    print(f"Saved stats → {output_path / 'meta' / 'stats.json'}")
+    with open(output_path / "meta" / "per_horizon_stats.json", "w") as f:
+        json.dump(per_horizon_stats, f, indent=2)
+
+    print(f"\nSaved {len(train_samples)} train samples → {output_path / 'train_samples.pkl'}")
+    print(f"Saved {len(val_samples)} val samples → {output_path / 'val_samples.pkl'}")
+    print(f"Saved {len(all_samples)} total samples → {output_path / 'samples.pkl'} (backward compat)")
+    print(f"Saved stats (train only) → {output_path / 'meta' / 'stats.json'}")
+    print(f"Saved per-horizon stats → {output_path / 'meta' / 'per_horizon_stats.json'}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Preprocess nuScenes for DreamZero")
-    parser.add_argument("--data_root", type=str, default="/home/wang/Dataset/nuscenes")
-    parser.add_argument("--output_dir", type=str, default="/home/wang/Dataset/nuscenes/preprocessed_dreamzero")
-    parser.add_argument("--version", type=str, default="v1.0-mini")
+    parser.add_argument("--data_root", type=str, default="/home/zhidong/nuscenes_data")
+    parser.add_argument("--output_dir", type=str, default="/home/zhidong/nuscenes_preprocessed")
+    parser.add_argument("--version", type=str, default="v1.0-trainval")
     args = parser.parse_args()
     preprocess_nuscenes(args.data_root, args.output_dir, args.version)

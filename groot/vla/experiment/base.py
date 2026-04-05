@@ -389,9 +389,6 @@ class BaseTrainer(transformers.Trainer):
             output = super().training_step(model, inputs)
 
         time_taken = time.time() - start_time
-        print(
-            f"Rank {self.global_rank} time taken for training_step {self.current_step}: {time_taken:.2f} seconds"
-        )
 
         if enable_profile:
             trace_path = f"{self.torch_profile_dir}/trace_rank_{self.global_rank}_step_{self.current_step}.json.gz"
@@ -677,6 +674,12 @@ class BaseExperiment(ABC):
             indent=4,
         )
         print("Successfully dumped metadata")
+
+        # Save per-horizon statistics if available (e.g. from NuScenesDataset)
+        if hasattr(train_dataset, 'per_horizon_stats') and train_dataset.per_horizon_stats is not None:
+            per_horizon_save_path = exp_cfg_dir / "per_horizon_stats.json"
+            U.json_dump(train_dataset.per_horizon_stats, per_horizon_save_path, indent=4)
+            print(f"Successfully dumped per-horizon stats to {per_horizon_save_path}")
 
         val_dataset = self.create_val_dataset(cfg, model)
         data_collator = self.create_data_collator(cfg, model)
