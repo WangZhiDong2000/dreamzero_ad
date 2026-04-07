@@ -4,7 +4,8 @@
 # Predicts 6 future waypoints (3 seconds at 2 Hz).
 #
 # Usage:
-#   CUDA_VISIBLE_DEVICES=6,7 bash scripts/train/nuscenes_training_multi_gpu.sh
+#   bash scripts/train/nuscenes_training_multi_gpu.sh   # uses CUDA_VISIBLE_DEVICES=4,5,6,7 by default
+#   CUDA_VISIBLE_DEVICES=0,1,2,3 bash scripts/train/nuscenes_training_multi_gpu.sh  # override GPUs
 #
 # Prerequisites:
 #   - Preprocessed nuScenes data (run scripts/data/preprocess_nuscenes_for_dreamzero.py first)
@@ -101,11 +102,11 @@ torchrun \
     training_args.deepspeed="groot/vla/configs/deepspeed/zero2.json" \
     training_args.warmup_ratio=0.05 \
     output_dir="$OUTPUT_DIR" \
-    per_device_train_batch_size=1 \
+    per_device_train_batch_size=4 \
     max_steps=290500 \
     weight_decay=1e-5 \
     save_steps=2000 \
-    save_total_limit=5 \
+    save_total_limit=3 \
     save_strategy=steps \
     upload_checkpoints=false \
     bf16=true \

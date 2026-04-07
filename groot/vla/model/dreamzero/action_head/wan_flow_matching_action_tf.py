@@ -789,8 +789,8 @@ class WANPolicyHead(ActionHead):
             if actions.numel() > 0:
                 action_loss_per_sample = torch.nn.functional.mse_loss(
                     action_noise_pred.float(), training_target_action.float(), reduction='none'
-                ) * action_mask  # shape: [B, ...]
-                action_loss_per_sample = has_real_action[:, None].float() * action_loss_per_sample  # apply has_real_action
+                ) * action_mask  # shape: [B, horizon, action_dim]
+                action_loss_per_sample = has_real_action[:, None, None].float() * action_loss_per_sample  # apply has_real_action
                 # Mean over real dims only (avoid scaling by 3/32 from zero-padding)
                 mask_count = action_mask.sum(dim=-1, keepdim=True).clamp(min=1)
                 action_loss_per_step = action_loss_per_sample.sum(dim=2) / mask_count.squeeze(-1)
